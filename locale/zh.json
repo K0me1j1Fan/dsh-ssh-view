@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "SSH 服务器视图",
+    "description": "通过 SSH 查看和编辑无头 Linux 服务器的文件、进程与日志。"
+  }
+}

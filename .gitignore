@@ -1,0 +1,7 @@
+node_modules/
+.npm-cache/
+test/.tmp/
+vault.json
+hosts.json
+*.log
+.DS_Store

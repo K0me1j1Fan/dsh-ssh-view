@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "SSH Server View",
+    "description": "Browse and edit files, inspect processes, and tail logs on a headless Linux server over SSH."
+  }
+}

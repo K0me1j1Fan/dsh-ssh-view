@@ -1,0 +1,15 @@
+# SSH server view: one Host row owns the encrypted credential vault, the SSH
+# sessions, and the authenticated /api routes; the bundle's Client half renders
+# the main panel and its sidebar entry.
+#
+# Config keys (all optional, defaults shown):
+#   dataDir            storage directory for vault.json and hosts.json
+#   connectTimeoutMs    20000
+#   autoLockMinutes     15     0 disables the automatic vault lock
+#   maxTextBytes        2097152
+#   maxUploadBytes      1073741824
+- insert:
+    - id: ssh-view
+      name: 'dsh-ssh-view'
+      config:
+        autoLockMinutes: 15
