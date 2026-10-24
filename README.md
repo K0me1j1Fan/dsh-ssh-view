@@ -40,13 +40,13 @@
 DSH 的插件管理器支持 git 规格，无需先克隆：
 
 ```bash
-dsh plugin --profile web add github:<your-name>/dsh-ssh-view
+dsh plugin --profile web add github:K0me1j1Fan/dsh-ssh-view
 
 # 没有全局 dsh 时
-npx @deepseek-ai/dsh plugin --profile web add github:<your-name>/dsh-ssh-view
+npx @deepseek-ai/dsh plugin --profile web add github:K0me1j1Fan/dsh-ssh-view
 ```
 
-> 固定版本可以写 `github:<your-name>/dsh-ssh-view#v0.1.0`。
+> 固定版本可以写 `github:K0me1j1Fan/dsh-ssh-view#v0.1.0`。
 
 安装完成后：
 
@@ -57,7 +57,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:<your-name>/dsh-ssh-view
 ### 方式二：本地克隆安装（开发用）
 
 ```bash
-git clone https://github.com/<your-name>/dsh-ssh-view.git
+git clone https://github.com/K0me1j1Fan/dsh-ssh-view.git
 cd dsh-ssh-view
 npm install                     # 安装 ssh2
 dsh plugin --profile web add "$PWD"
