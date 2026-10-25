@@ -3,5 +3,6 @@ node_modules/
 test/.tmp/
 vault.json
 hosts.json
+profiles.json
 *.log
 .DS_Store

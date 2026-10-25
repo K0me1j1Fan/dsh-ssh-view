@@ -15,7 +15,8 @@
 
 | 模块 | 能力 |
 | --- | --- |
-| 连接 | 主机 / 端口 / 用户名 / 密码；多套连接配置；一键重连；主机指纹 TOFU 校验 |
+| 连接 | 主机 / 端口 / 用户名；**密码或 SSH 密钥（ssh-agent / ~/.ssh）登录**；多套配置；主机指纹 TOFU 校验 |
+| 自动连接 | 使用 SSH 密钥登录时，把非机密配置保存到本机；DSH 启动后自动连接最近一次配置 |
 | 文件 | 目录浏览、面包屑与路径跳转、新建文件 / 文件夹、重命名、移动、递归删除、上传、下载 |
 | 编辑 | 内置文本编辑器，`Ctrl/Cmd+S` 保存；按内容哈希检测并发修改，冲突时提示重新加载或强制覆盖；二进制与超大文件改为提示下载 |
 | 进程 | `ps` 列表（PID、用户、CPU%、内存%、RSS、运行时长、状态、命令行），排序、过滤、定时刷新；SIGTERM / SIGKILL，二次确认，拒绝 PID 1 |
@@ -46,7 +47,7 @@ dsh plugin --profile web add github:K0me1j1Fan/dsh-ssh-view
 npx @deepseek-ai/dsh plugin --profile web add github:K0me1j1Fan/dsh-ssh-view
 ```
 
-> 固定版本可以写 `github:K0me1j1Fan/dsh-ssh-view#v0.1.0`。
+> 固定版本可以写 `github:K0me1j1Fan/dsh-ssh-view#v0.2.0`。
 
 安装完成后：
 
@@ -82,9 +83,12 @@ dsh plugin --profile web add dsh-ssh-view
 
 ## 快速使用
 
-1. （可选）点「设置主密码」，创建加密凭据库。
-2. 填写主机 / 端口 / 用户名 / 密码；勾选「加密保存此连接」可在下次一键连接。
-3. 连接成功后：
+1. 填写主机 / 端口 / 用户名。
+2. 选择认证方式：
+   - **SSH 密钥**（推荐）：使用系统 `ssh-agent` 中已加载的密钥；没有 agent 时自动回退到 `~/.ssh` 下的第一把私钥。不保存密码，也不需要主密码。
+   - **密码**：需要先创建 / 解锁主密码凭据库，才能加密保存密码。
+3. 勾选「保存此连接」；使用 SSH 密钥时同时勾选「DSH 启动后自动连接」。
+4. 连接成功后：
    - **文件**：双击目录进入，双击文本文件打开编辑器；工具栏可上传、下载、重命名、移动、删除。
    - **进程**：搜索框过滤，点击列头排序；行尾停止按钮选择 SIGTERM / SIGKILL 并确认。
    - **日志**：输入绝对路径或点「常用日志」，勾选「跟随刷新」每 2.5 秒重读末尾 N 行。
@@ -95,7 +99,8 @@ dsh plugin --profile web add dsh-ssh-view
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
-| `dataDir` | `$DSH_HOME/storages/ssh-view` | `vault.json` 与 `hosts.json` 所在目录 |
+| `dataDir` | `$DSH_HOME/storages/ssh-view` | `vault.json`、`hosts.json`、`profiles.json` 所在目录 |
+| `autoConnect` | `true` | Host 启动后是否自动连接最近一次 SSH 密钥配置；`false` 关闭 |
 | `connectTimeoutMs` | `20000` | SSH 连接超时（含握手） |
 | `autoLockMinutes` | `15` | 凭据库闲置自动锁定；`0` 关闭 |
 | `maxTextBytes` | `2097152` | 编辑器可打开 / 保存的单文件上限（2 MB） |
@@ -111,6 +116,7 @@ dsh plugin --profile web add dsh-ssh-view
   config:
     dataDir: /var/lib/dsh/ssh-view
     autoLockMinutes: 30
+    autoConnect: true
 ```
 
 ## 安全模型
@@ -133,6 +139,13 @@ dsh plugin --profile web add dsh-ssh-view
 - 闲置超过 `autoLockMinutes` 自动锁定；手动「锁定」立即清零内存密钥；插件卸载时锁定
 
 未创建 / 未解锁凭据库时仍可连接，但配置只存在进程内存，DSH 重启后需重新输入。
+
+### SSH 密钥与自动连接
+
+- 密钥认证优先使用 `SSH_AUTH_SOCK` 指向的 ssh-agent；没有可用 agent 时，回退读取 `~/.ssh/id_ed25519`（其次 `id_rsa`、`id_ecdsa`）。
+- 密钥模式下 `profiles.json` 只保存主机、端口、用户名和最近一次配置的 id，**不保存密码或私钥**；文件权限 `0600`。
+- 自动连接只对密钥配置生效：Host 启动后约 1.2 秒尝试，失败会重试两次，并在界面上显示原因和「重试」按钮。
+- 密码配置不会自动连接：DSH 启动时凭据库处于锁定状态，必须先解锁。
 
 ### 浏览器与 Host
 
@@ -163,6 +176,7 @@ dsh plugin --profile web add dsh-ssh-view
 | --- | --- | --- | --- |
 | `vault.json` | `$DSH_HOME/storages/ssh-view/` | 加密后的连接配置（可选） | `0600` |
 | `hosts.json` | `$DSH_HOME/storages/ssh-view/` | 主机指纹（非机密，用于防 MITM） | `0600` |
+| `profiles.json` | `$DSH_HOME/storages/ssh-view/` | SSH 密钥连接配置（非机密，用于启动自动连接） | `0600` |
 
 ## 故障排查
 
@@ -173,6 +187,9 @@ dsh plugin --profile web add dsh-ssh-view
 | 「用户名或密码错误」 | 密码错误，或远端禁用了密码登录（`PasswordAuthentication no`）。 |
 | 「主机指纹与已保存的不一致」 | 服务器重装或更换了密钥。确认变更属实后点「信任新指纹并重试」。 |
 | 「SFTP 不可用」 | 远端未启用 SFTP 子系统。检查 `sshd_config` 中的 `Subsystem sftp /usr/lib/openssh/sftp-server`。 |
+| 「服务器没有接受这把 SSH 密钥」 | 把本机 `~/.ssh/id_ed25519.pub` 追加到服务器 `~/.ssh/authorized_keys`，确认 `PubkeyAuthentication yes`。 |
+| 「未找到可用的 ssh-agent 或 ~/.ssh 私钥」 | 运行 `ssh-add ~/.ssh/id_ed25519`，或改用密码登录。 |
+| 启动后没有自动连接 | 界面会显示自动连接失败原因，点「重试」；确认勾选了「DSH 启动后自动连接」，且该配置是 SSH 密钥方式。 |
 | 进程页读取失败 | 远端缺少 `procps`；安装后重试。 |
 | 刷新页面后没有图标 | 首次安装客户端插件需要刷新；确认 `web` profile 的 `package.json` 中 bundles 含 `dsh-ssh-view`。 |
 | 修改 Host 代码后行为未变 | Host 模块在进程内缓存，改动后需重启 DSH。 |
@@ -192,11 +209,18 @@ docker run -d --name dsh-ssh-test -p 127.0.0.1:2222:2222 alpine:3.20 sh -c "
   printf 'PasswordAuthentication yes\nPermitRootLogin yes\n' >> /etc/ssh/sshd_config &&
   exec /usr/sbin/sshd -D -e -p 2222"
 
-# 2) 端到端：凭据库、指纹、SFTP、上传下载、进程、日志、路径防护、RPC 路由
-node test/ssh-view.e2e.mjs
+# 2) 让测试容器信任本机公钥（用于密钥与自动连接测试）
+docker exec dsh-ssh-test sh -c 'mkdir -p /root/.ssh && chmod 700 /root/.ssh'
+docker cp ~/.ssh/id_ed25519.pub dsh-ssh-test:/root/.ssh/authorized_keys
+docker exec dsh-ssh-test chmod 600 /root/.ssh/authorized_keys
 
-# 3) 客户端模块：能否注册主面板、侧边栏与双语文案
+# 3) 端到端：凭据库、指纹、SFTP、上传下载、进程、日志、路径防护、RPC 路由
+node test/ssh-view.e2e.mjs
+E2E_AGENT=1 node test/ssh-view.e2e.mjs   # 追加密钥登录与启动自动连接
+
+# 4) 客户端模块：能否注册主面板、侧边栏与双语文案
 node test/ssh-view.client-module.mjs
+
 ```
 
 `test/ssh-view.e2e.mjs` 默认连接 `127.0.0.1:2222`（`root` / `test-password-123`），
@@ -222,7 +246,7 @@ node test/ssh-view.client-module.mjs
 ## 已知限制
 
 - 一次只维持一条 SSH 连接，切换连接会断开上一条。
-- 不支持 SSH 私钥登录、跳板机、sudo 提权、systemd / Docker 服务管理。
+- 不支持跳板机、sudo 提权、systemd / Docker 服务管理。
 - 日志跟随是客户端定时重读末尾 N 行（2.5s），不是服务端流式推送。
 - 单文件编辑上限 2 MB；更大的文件请下载后处理。
 - 进程结束仅支持 SIGTERM / SIGKILL；受 SSH 用户权限限制。

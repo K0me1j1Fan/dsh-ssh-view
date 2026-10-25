@@ -50,6 +50,21 @@ window.__ModuleLoader__.load({
       'conn.password': '密码',
       'conn.remember': '加密保存此连接',
       'conn.rememberHint': '需要先解锁或创建主密码；密码只以密文写入磁盘。',
+      'conn.auth': '认证方式',
+      'conn.auth.password': '密码',
+      'conn.auth.agent': 'SSH 密钥',
+      'conn.agentHint': '使用系统 ssh-agent 中已加载的密钥；插件不保存密码或私钥。',
+      'conn.agentUnavailable': '未检测到可用的 ssh-agent 或 ~/.ssh 私钥。',
+      'conn.agentReady': 'ssh-agent 就绪',
+      'conn.agentReadyKey': '将使用 ~/.ssh 私钥',
+      'conn.rememberAgent': '保存此连接（不含密钥）',
+      'conn.rememberAgentHint': '只保存主机、端口和用户名，用于下次自动连接。',
+      'conn.autoConnect': 'DSH 启动后自动连接',
+      'conn.autoConnectHint': '仅对 SSH 密钥连接生效；密码连接仍需解锁凭据库。',
+      'conn.autoConnectFailed': '自动连接失败',
+      'conn.lastProfile': '自动连接',
+      'conn.retry': '重试',
+      'conn.vaultOptional': '只有密码登录需要主密码；SSH 密钥登录不需要凭据库。',
       'conn.vaultLockedHint': '凭据库已锁定，已保存的连接不可见。解锁后可一键连接。',
       'conn.memoryOnly': '仅本次运行',
       'conn.encrypted': '已加密保存',
@@ -181,6 +196,21 @@ window.__ModuleLoader__.load({
       'conn.password': 'Password',
       'conn.remember': 'Encrypt and save this connection',
       'conn.rememberHint': 'Requires an unlocked master passphrase; the password is written only as ciphertext.',
+      'conn.auth': 'Authentication',
+      'conn.auth.password': 'Password',
+      'conn.auth.agent': 'SSH key',
+      'conn.agentHint': 'Uses a key already loaded in the system ssh-agent; no password or private key is stored.',
+      'conn.agentUnavailable': 'No usable ssh-agent or ~/.ssh private key was found.',
+      'conn.agentReady': 'ssh-agent ready',
+      'conn.agentReadyKey': 'Falls back to the ~/.ssh key',
+      'conn.rememberAgent': 'Save this connection (no secret)',
+      'conn.rememberAgentHint': 'Stores only host, port and username for the next automatic connection.',
+      'conn.autoConnect': 'Reconnect when DSH starts',
+      'conn.autoConnectHint': 'Applies to SSH-key connections only; password connections still need the vault.',
+      'conn.autoConnectFailed': 'Automatic connection failed',
+      'conn.lastProfile': 'Auto',
+      'conn.retry': 'Retry',
+      'conn.vaultOptional': 'Only password logins need the master passphrase; SSH-key logins do not.',
       'conn.vaultLockedHint': 'The credential vault is locked, so saved connections are hidden. Unlock it to connect in one click.',
       'conn.memoryOnly': 'This run only',
       'conn.encrypted': 'Encrypted',
@@ -521,6 +551,11 @@ window.__ModuleLoader__.load({
 .dsv_check{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary);cursor:pointer;max-width:560px}
 .dsv_check input{margin:3px 0 0;accent-color:var(--dsw-alias-state-business-primary);flex:none}
 .dsv_checkText{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dsv_seg{display:inline-flex;align-items:center;gap:2px;padding:2px;border-radius:12px;background:var(--dsw-alias-bg-module-platform);flex-wrap:wrap}
+.dsv_segBtn{height:26px;padding:0 10px;border:none;border-radius:10px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.dsv_segBtn:hover:not(:disabled){color:var(--dsw-alias-label-primary)}
+.dsv_segBtn:disabled{color:var(--dsw-alias-label-caption);cursor:default}
+.dsv_segActive{background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:var(--dsw-elevation-soft)}
 .dsv_hint{font-size:12px;line-height:18px;color:var(--dsw-alias-label-caption)}
 .dsv_actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
 .dsv_notice{display:flex;align-items:flex-start;gap:8px;border-radius:10px;padding:9px 12px;margin-bottom:12px;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);font-size:12px;line-height:20px}
@@ -806,24 +841,41 @@ window.__ModuleLoader__.load({
 
     // ── connection view ───────────────────────────────────────────────────────
 
-    function ConnectionView({ state, form, setForm, busy, error, onConnect, onSelectProfile, onDeleteProfile, onOpenVault, onLockVault }) {
+    function ConnectionView({ state, form, setForm, busy, error, onConnect, onSelectProfile, onDeleteProfile, onOpenVault, onLockVault, onToggleAutoConnect, onRetryAuto }) {
       const t = useT()
       const vault = state.vault
+      const agent = state.agent || { available: false, socket: false, privateKey: false }
+      const isAgent = form.auth === 'agent'
+      const agentReady = agent.available
+        ? `${t('conn.agentReady')}${agent.socket ? '' : ` · ${t('conn.agentReadyKey')}`}`
+        : t('conn.agentUnavailable')
+
       const vaultCard = vault.unlocked
         ? h('div', { className: 'dsv_card' },
           h('div', { className: 'dsv_cardHead' },
             h('h2', null, t('vault.unlocked')),
             h('span', { className: 'dsv_badge dsv_badgeOn' }, h(IconUnlock, { size: 11 }), t('vault.unlocked')),
-            h('button', { type: 'button', className: 'dsv_btn', onClick: onLockVault }, h(IconLock, { size: 13 }), t('common.lock'))))
+            h('button', { type: 'button', className: 'dsv_btn', onClick: onLockVault }, h(IconLock, { size: 13 }), t('common.lock'))),
+          h('p', { className: 'dsv_hint', style: { margin: 0 } }, t('conn.vaultOptional')))
         : vault.exists
           ? h('div', { className: 'dsv_card' },
             h('div', { className: 'dsv_cardHead' }, h('h2', null, t('vault.locked')), h('span', { className: 'dsv_badge' }, h(IconLock, { size: 11 }), t('vault.locked'))),
             h('p', { className: 'dsv_hint', style: { margin: '0 0 10px' } }, t('conn.vaultLockedHint')),
+            h('p', { className: 'dsv_hint', style: { margin: '0 0 10px' } }, t('conn.vaultOptional')),
             h('button', { type: 'button', className: 'dsv_btn dsv_btnPrimary', onClick: onOpenVault }, h(IconUnlock, { size: 13 }), t('common.unlock')))
           : h('div', { className: 'dsv_card' },
             h('div', { className: 'dsv_cardHead' }, h('h2', null, t('vault.missing'))),
             h('p', { className: 'dsv_hint', style: { margin: '0 0 10px' } }, t('vault.createHint')),
+            h('p', { className: 'dsv_hint', style: { margin: '0 0 10px' } }, t('conn.vaultOptional')),
             h('button', { type: 'button', className: 'dsv_btn dsv_btnPrimary', onClick: onOpenVault }, h(IconLock, { size: 13 }), t('vault.create')))
+
+      const autoError = state.autoConnectError
+        ? h(Notice, { kind: 'error' },
+          h('strong', null, t('conn.autoConnectFailed')),
+          h('pre', null, state.autoConnectError),
+          h('div', { style: { marginTop: '8px' } },
+            h('button', { type: 'button', className: 'dsv_btn', onClick: onRetryAuto }, t('conn.retry'))))
+        : null
 
       const errorNotice = error
         ? h(Notice, { kind: 'error' },
@@ -843,21 +895,41 @@ window.__ModuleLoader__.load({
         h('input', { className: 'dsv_input', value: form.port, onChange: (event) => setForm({ ...form, port: event.target.value.replace(/[^0-9]/g, '') }), inputMode: 'numeric', spellCheck: false }))
       const userField = h(Field, { label: t('conn.user') },
         h('input', { className: 'dsv_input', value: form.username, onChange: (event) => setForm({ ...form, username: event.target.value }), placeholder: 'root', spellCheck: false, autoComplete: 'off' }))
-      const passwordField = h(Field, { label: t('conn.password'), wide: true },
-        h('input', {
-          className: 'dsv_input',
-          type: 'password',
-          value: form.password,
-          onChange: (event) => setForm({ ...form, password: event.target.value }),
-          placeholder: '••••••••',
-          autoComplete: 'new-password',
-        }))
-      const savedPasswordHint = form.id && !form.password
+
+      const authField = h(Field, { label: t('conn.auth'), wide: true, hint: isAgent ? agentReady : t('conn.rememberHint') },
+        h('div', { className: 'dsv_seg', role: 'group', 'aria-label': t('conn.auth') },
+          h('button', {
+            type: 'button',
+            className: cx('dsv_segBtn', form.auth === 'password' && 'dsv_segActive'),
+            'aria-pressed': form.auth === 'password',
+            onClick: () => setForm({ ...form, auth: 'password', remember: false }),
+          }, h(IconLock, { size: 12 }), t('conn.auth.password')),
+          h('button', {
+            type: 'button',
+            className: cx('dsv_segBtn', form.auth === 'agent' && 'dsv_segActive'),
+            'aria-pressed': form.auth === 'agent',
+            disabled: !agent.available,
+            onClick: () => setForm({ ...form, auth: 'agent', remember: true }),
+          }, h(IconServer, { size: 12 }), t('conn.auth.agent'))))
+
+      const passwordField = !isAgent
+        ? h(Field, { label: t('conn.password'), wide: true },
+          h('input', {
+            className: 'dsv_input',
+            type: 'password',
+            value: form.password,
+            onChange: (event) => setForm({ ...form, password: event.target.value }),
+            placeholder: '••••••••',
+            autoComplete: 'new-password',
+          }))
+        : null
+      const savedPasswordHint = !isAgent && form.id && !form.password
         ? h('span', { className: 'dsv_hint', style: { gridColumn: '1 / -1' } }, t('conn.passwordHint'))
         : null
-      const fields = h('div', { className: 'dsv_fields' }, nameField, hostField, portField, userField, passwordField, savedPasswordHint)
 
-      const rememberRow = h('div', { className: 'dsv_actions', style: { marginTop: '10px' } },
+      const fields = h('div', { className: 'dsv_fields' }, nameField, hostField, portField, userField, authField, passwordField, savedPasswordHint)
+
+      const rememberRow = h('div', { className: 'dsv_actions', style: { marginTop: '10px', flexDirection: 'column', alignItems: 'flex-start', gap: '8px' } },
         h('label', { className: 'dsv_check' },
           h('input', {
             type: 'checkbox',
@@ -865,17 +937,30 @@ window.__ModuleLoader__.load({
             onChange: (event) => setForm({ ...form, remember: event.target.checked }),
           }),
           h('span', { className: 'dsv_checkText' },
-            h('span', null, t('conn.remember')),
-            h('span', { className: 'dsv_hint' }, t('conn.rememberHint')))))
+            h('span', null, isAgent ? t('conn.rememberAgent') : t('conn.remember')),
+            h('span', { className: 'dsv_hint' }, isAgent ? t('conn.rememberAgentHint') : t('conn.rememberHint')))),
+        h('label', { className: 'dsv_check' },
+          h('input', {
+            type: 'checkbox',
+            checked: state.autoConnect === true,
+            onChange: (event) => onToggleAutoConnect(event.target.checked),
+          }),
+          h('span', { className: 'dsv_checkText' },
+            h('span', null, t('conn.autoConnect')),
+            h('span', { className: 'dsv_hint' }, t('conn.autoConnectHint')))))
 
       const submitRow = h('div', { className: 'dsv_actions' },
-        h('button', { type: 'submit', className: 'dsv_btn dsv_btnPrimary', disabled: busy },
-          busy ? h('span', { className: 'dsv_spin' }) : h(IconPlay, { size: 13 }),
-          busy ? t('common.connecting') : t('common.connect')),
+        h('button', {
+          type: 'submit',
+          className: 'dsv_btn dsv_btnPrimary',
+          disabled: busy || (isAgent && !agent.available),
+        },
+        busy ? h('span', { className: 'dsv_spin' }) : h(IconPlay, { size: 13 }),
+        busy ? t('common.connecting') : t('common.connect')),
         h('button', {
           type: 'button',
           className: 'dsv_btn',
-          onClick: () => setForm({ id: '', name: '', host: '', port: '22', username: '', password: '', remember: true }),
+          onClick: () => setForm({ id: '', name: '', host: '', port: '22', username: '', password: '', remember: true, auth: agent.available ? 'agent' : 'password' }),
         }, t('conn.clear')))
 
       const formNode = h('form', {
@@ -892,8 +977,14 @@ window.__ModuleLoader__.load({
           h('div', { className: 'dsv_profileMain' },
             h('span', { className: 'dsv_profileName' }, profile.name),
             h('span', { className: 'dsv_profileHost' }, `${profile.username}@${profile.host}:${profile.port}`)),
-          h('span', { className: cx('dsv_badge', profile.saved && 'dsv_badgeOn') }, profile.saved ? t('conn.encrypted') : t('conn.memoryOnly')),
-          profile.hasPassword ? null : h('span', { className: 'dsv_badge' }, t('conn.noPassword')),
+          h('span', { className: cx('dsv_badge', profile.auth === 'agent' && 'dsv_badgeOn') },
+            profile.auth === 'agent' ? t('conn.auth.agent') : t('conn.auth.password')),
+          profile.id === state.lastProfileId
+            ? h('span', { className: 'dsv_badge dsv_badgeOn' }, t('conn.lastProfile'))
+            : null,
+          profile.auth === 'password' && !profile.hasPassword
+            ? h('span', { className: 'dsv_badge' }, t('conn.noPassword'))
+            : null,
           h('div', { className: 'dsv_profileActions' },
             h('button', { type: 'button', className: 'dsv_btn', onClick: () => onSelectProfile(profile) }, h(IconPlay, { size: 12 }), t('common.connect')),
             h('button', {
@@ -907,6 +998,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'dsv_scroll' },
         h('div', { className: 'dsv_content dsv_narrow' },
           vaultCard,
+          autoError,
           errorNotice,
           h('section', { className: 'dsv_card' }, h('h2', null, t('conn.new')), formNode),
           h('section', { className: 'dsv_card' }, h('h2', null, t('conn.saved')), profileRows)))
@@ -1658,6 +1750,7 @@ window.__ModuleLoader__.load({
             h('span', { className: 'dsv_mono' }, `${session.username}@${session.host}:${session.port}`),
             server.hostname ? h('span', null, `· ${server.hostname}`) : null,
             server.os ? h('span', null, `· ${server.os}`) : null,
+            h('span', null, `· ${session.auth === 'agent' ? t('conn.auth.agent') : t('conn.auth.password')}${session.keySource === 'private-key' ? ' (~/.ssh)' : ''}`),
             h('span', { title: String(session.fingerprint || '') }, `· ${t('conn.fingerprint')} ${String(session.fingerprint || '').replace('SHA256:', '').slice(0, 16)}…`)),
           h('span', { className: 'dsv_spacer' }),
           h('button', { type: 'button', className: 'dsv_btn', onClick: () => { void refresh() } }, refreshing ? h('span', { className: 'dsv_spin' }) : h(IconRefresh, { size: 13 }), t('common.refresh')),
@@ -1683,7 +1776,7 @@ window.__ModuleLoader__.load({
       const [toast, setToast] = React.useState(null)
       const [tab, setTab] = React.useState('files')
       const [dialog, setDialog] = React.useState(null)
-      const [form, setForm] = React.useState({ id: '', name: '', host: '', port: '22', username: '', password: '', remember: true })
+      const [form, setForm] = React.useState({ id: '', name: '', host: '', port: '22', username: '', password: '', remember: true, auth: '' })
       const lastAttempt = React.useRef(null)
       const previousSession = React.useRef(null)
 
@@ -1723,15 +1816,23 @@ window.__ModuleLoader__.load({
         return () => clearTimeout(timer)
       }, [toast])
 
+      const agentAvailable = Boolean(state && state.agent && state.agent.available)
+      React.useEffect(() => {
+        if (!state || form.auth !== '') return
+        setForm((current) => (current.auth !== '' ? current : { ...current, auth: agentAvailable ? 'agent' : 'password' }))
+      }, [state, form.auth, agentAvailable])
+
       const connect = React.useCallback(async (input) => {
+        const effectiveAuth = form.auth || (agentAvailable ? 'agent' : 'password')
         const payload = input || {
           profileId: form.id || undefined,
           host: form.host.trim(),
           port: Number(form.port) || 22,
           username: form.username.trim(),
           name: form.name.trim() || undefined,
+          auth: effectiveAuth,
           remember: form.remember === true,
-          ...(form.password !== '' ? { password: form.password } : {}),
+          ...(effectiveAuth === 'password' && form.password !== '' ? { password: form.password } : {}),
         }
         setBusy(true)
         setError(null)
@@ -1746,7 +1847,7 @@ window.__ModuleLoader__.load({
         } finally {
           setBusy(false)
         }
-      }, [form])
+      }, [form, agentAvailable])
 
       const applyControl = (result) => {
         if (result && result.state) setState(result.state)
@@ -1854,6 +1955,7 @@ window.__ModuleLoader__.load({
             return connect(input)
           },
           onSelectProfile: (profile) => {
+            const authMode = profile.auth === 'agent' ? 'agent' : 'password'
             setForm({
               id: profile.id,
               name: profile.name,
@@ -1861,14 +1963,28 @@ window.__ModuleLoader__.load({
               port: String(profile.port),
               username: profile.username,
               password: '',
-              remember: profile.saved,
+              remember: true,
+              auth: authMode,
             })
-            if (profile.hasPassword && state.vault.unlocked) {
-              void connect({ profileId: profile.id, remember: true })
+            if (authMode === 'agent') {
+              void connect({ profileId: profile.id, auth: 'agent', remember: true })
+            } else if (profile.hasPassword && state.vault.unlocked) {
+              void connect({ profileId: profile.id, auth: 'password', remember: true })
             }
           },
           onDeleteProfile: deleteProfile,
           onOpenVault: openVault,
+          onToggleAutoConnect: async (autoConnect) => {
+            try {
+              applyControl(await rpc('settings.save', { autoConnect }))
+            } catch (failure) {
+              notify(failure.message || String(failure), 'error')
+            }
+          },
+          onRetryAuto: () => {
+            if (!state.lastProfileId) return undefined
+            return connect({ profileId: state.lastProfileId, auth: 'agent', remember: true })
+          },
           onLockVault: async () => {
             try {
               applyControl(await rpc('vault.lock'))

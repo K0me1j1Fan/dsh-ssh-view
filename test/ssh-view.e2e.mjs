@@ -9,7 +9,7 @@
  * /tmp/dsh-view-e2e on the server.
  */
 import assert from 'node:assert/strict'
-import { readFile, rm } from 'node:fs/promises'
+import { readFile, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
@@ -115,6 +115,23 @@ async function main() {
     await service.dispatch('host.forget', { host: HOST, port: PORT })
     const reconnected = await service.connect({ profileId, remember: true })
     assert.match(reconnected.state.session.fingerprint, /^SHA256:/)
+  })
+
+  await test('connect: ssh-agent key authentication and non-secret profile store', async () => {
+    if (process.env.E2E_AGENT !== '1') {
+      console.log('     skipped: set E2E_AGENT=1 and authorize ~/.ssh/id_ed25519.pub on the test server')
+      return
+    }
+    const result = await service.connect({ host: HOST, port: PORT, username: USER, auth: 'agent', remember: true })
+    assert.equal(result.state.session.auth, 'agent')
+    const storePath = join(ROOT, 'profiles.json')
+    const raw = await readFile(storePath, 'utf8')
+    assert.ok(!/password/i.test(raw), 'profile store must not contain a password')
+    assert.equal((await stat(storePath)).mode & 0o777, 0o600)
+    const store = JSON.parse(raw)
+    assert.equal(store.autoConnect, true)
+    assert.ok(store.lastProfileId, 'last profile recorded')
+    assert.equal(store.profiles[0].auth, 'agent')
   })
 
   await test('fs: mkdir, write, read, conflict, force, rename, remove', async () => {
@@ -252,6 +269,26 @@ async function main() {
     assert.equal(junk.data.error.code, 'bad-request')
     for (const disposer of disposers.reverse()) {
       if (typeof disposer === 'function') await disposer()
+    }
+  })
+
+  await test('auto-connect: a fresh service reconnects from profiles.json', async () => {
+    if (process.env.E2E_AGENT !== '1') {
+      console.log('     skipped: set E2E_AGENT=1 and authorize ~/.ssh/id_ed25519.pub on the test server')
+      return
+    }
+    service.dispose()
+    const restarted = new ServerViewService({
+      config: { dataDir: ROOT, connectTimeoutMs: 10000 },
+      logger: { warn() {}, info() {} },
+    })
+    try {
+      for (let attempt = 0; attempt < 40 && !restarted.controlState().session; attempt += 1) await delay(250)
+      const state = restarted.controlState()
+      assert.ok(state.session, `auto-connect failed: ${state.autoConnectError}`)
+      assert.equal(state.session.auth, 'agent')
+    } finally {
+      restarted.dispose()
     }
   })
 
