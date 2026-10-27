@@ -117,6 +117,13 @@ window.__ModuleLoader__.load({
       'files.binary': '这是二进制文件，无法在编辑器中打开，可以下载后查看。',
       'files.tooLarge': '文件超过可编辑大小上限（{size}），可以下载后编辑。',
       'files.uploaded': '已上传 {name}',
+      'files.extract': '解压',
+      'files.extractTitle': '解压归档',
+      'files.extractTo': '解压到',
+      'files.extractOverwrite': '覆盖目标目录中的同名文件',
+      'files.extracting': '解压中…',
+      'files.extractDone': '已解压 {count} 个条目到 {target}',
+      'files.extractHint': '默认解压到归档同目录下的同名文件夹；目标目录非空时需要勾选覆盖。',
       'files.saved': '文件已保存',
       'editor.title': '编辑文件',
       'editor.save': '保存',
@@ -263,6 +270,13 @@ window.__ModuleLoader__.load({
       'files.binary': 'This is a binary file. Download it to inspect it.',
       'files.tooLarge': 'The file exceeds the editable size limit ({size}). Download it to edit it.',
       'files.uploaded': 'Uploaded {name}',
+      'files.extract': 'Extract',
+      'files.extractTitle': 'Extract archive',
+      'files.extractTo': 'Extract to',
+      'files.extractOverwrite': 'Overwrite existing files in the target',
+      'files.extracting': 'Extracting…',
+      'files.extractDone': 'Extracted {count} entries to {target}',
+      'files.extractHint': 'Defaults to a folder named after the archive next to it; a non-empty target needs the overwrite option.',
       'files.saved': 'File saved',
       'editor.title': 'Edit file',
       'editor.save': 'Save',
@@ -386,6 +400,21 @@ window.__ModuleLoader__.load({
       anchor.remove()
     }
 
+    const ARCHIVE_SUFFIXES = ['.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tbz', '.tar.xz', '.txz', '.tar', '.zip', '.gz', '.bz2', '.xz']
+
+    function isArchiveName(name) {
+      const lower = String(name).toLowerCase()
+      return ARCHIVE_SUFFIXES.some((suffix) => lower.endsWith(suffix))
+    }
+
+    function archiveStemName(name) {
+      const lower = String(name).toLowerCase()
+      for (const suffix of ARCHIVE_SUFFIXES) {
+        if (lower.endsWith(suffix)) return name.slice(0, name.length - suffix.length) || 'extracted'
+      }
+      return name
+    }
+
     function formatSize(bytes) {
       const value = Number(bytes) || 0
       if (value < 1024) return `${value} B`
@@ -502,6 +531,7 @@ window.__ModuleLoader__.load({
     const IconPlus = () => icon(['M8 3.2v9.6', 'M3.2 8h9.6'])
     const IconPlay = () => icon(['M5 3.4 12.2 8 5 12.6z'])
     const IconStop = () => icon(['M4.2 4.2h7.6v7.6H4.2z'])
+    const IconArchive = () => icon(['M2.5 5.2h11v8.3h-11z', 'M2.5 8.3h11', 'M6.4 3.2h3.2', 'M6.6 11h2.8'])
 
     const CSS = `
 .dsv_page{position:relative;box-sizing:border-box;width:100%;height:100%;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6}
@@ -1006,6 +1036,62 @@ window.__ModuleLoader__.load({
 
     // ── files ─────────────────────────────────────────────────────────────────
 
+    function ExtractDialog({ state, onChange, onCancel, onDone }) {
+      const t = useT()
+      const [busy, setBusy] = React.useState(false)
+      const [error, setError] = React.useState('')
+      const submit = async (event) => {
+        event.preventDefault()
+        if (busy) return
+        setBusy(true)
+        setError('')
+        try {
+          const result = await rpc('fs.extract', {
+            path: state.path,
+            target: state.target,
+            overwrite: state.overwrite === true,
+          })
+          onDone(result)
+        } catch (failure) {
+          setError(failure.message || String(failure))
+        } finally {
+          setBusy(false)
+        }
+      }
+      return h(Modal, {
+        title: t('files.extractTitle'),
+        meta: state.name,
+        onClose: busy ? () => {} : onCancel,
+        footer: [
+          h('button', { key: 'cancel', type: 'button', className: 'dsv_btn', onClick: onCancel, disabled: busy }, t('common.cancel')),
+          h('button', {
+            key: 'ok',
+            type: 'submit',
+            form: 'dsv-extract-form',
+            className: 'dsv_btn dsv_btnPrimary',
+            disabled: busy || !state.target.trim().startsWith('/'),
+          }, busy ? h('span', { className: 'dsv_spin' }) : null, busy ? t('files.extracting') : t('files.extract')),
+        ],
+      },
+      h('form', { id: 'dsv-extract-form', onSubmit: submit, style: { display: 'flex', flexDirection: 'column', gap: '10px' } },
+        h('span', { className: 'dsv_hint' }, t('files.extractHint')),
+        h(Field, { label: t('files.extractTo') },
+          h('input', {
+            className: 'dsv_input',
+            value: state.target,
+            onChange: (event) => onChange({ ...state, target: event.target.value }),
+            spellCheck: false,
+          })),
+        h('label', { className: 'dsv_check' },
+          h('input', {
+            type: 'checkbox',
+            checked: state.overwrite === true,
+            onChange: (event) => onChange({ ...state, overwrite: event.target.checked }),
+          }),
+          h('span', null, t('files.extractOverwrite')))),
+      error ? h(Notice, { kind: 'error' }, error) : null)
+    }
+
     function FilesTab({ session, limits, notify }) {
       const t = useT()
       const [listing, setListing] = React.useState(null)
@@ -1016,6 +1102,7 @@ window.__ModuleLoader__.load({
       const [editor, setEditor] = React.useState(null)
       const [prompt, setPrompt] = React.useState(null)
       const [confirm, setConfirm] = React.useState(null)
+      const [extract, setExtract] = React.useState(null)
       const [uploading, setUploading] = React.useState('')
       const uploadRef = React.useRef(null)
       const editorRef = React.useRef(null)
@@ -1107,6 +1194,16 @@ window.__ModuleLoader__.load({
             setPrompt(null)
             await load(currentPath)
           },
+        })
+      }
+
+      const startExtract = () => {
+        if (!entry || !isArchiveName(entry.name)) return
+        setExtract({
+          path: entry.path,
+          name: entry.name,
+          target: joinPath(currentPath, archiveStemName(entry.name)),
+          overwrite: false,
         })
       }
 
@@ -1304,6 +1401,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'dsv_toolbarSep' }),
           h('button', { type: 'button', className: 'dsv_btn', disabled: !entry, onClick: () => openEntry(entry) }, h(IconPlay, { size: 12 }), t('files.open')),
           h('button', { type: 'button', className: 'dsv_btn', disabled: !entry || entry.type === 'dir', onClick: () => entry && downloadFile(entry.path) }, h(IconDownload, { size: 13 }), t('files.download')),
+          h('button', { type: 'button', className: 'dsv_btn', disabled: !entry || !isArchiveName(entry.name), onClick: startExtract }, h(IconArchive, { size: 13 }), t('files.extract')),
           h('button', { type: 'button', className: 'dsv_btn', disabled: !entry, onClick: startRename }, h(IconEdit, { size: 13 }), t('files.rename')),
           h('button', { type: 'button', className: 'dsv_btn', disabled: !entry, onClick: startMove }, t('files.move')),
           h('button', { type: 'button', className: 'dsv_btn dsv_btnDanger', disabled: !entry, onClick: startDelete }, h(IconTrash, { size: 13 }), t('files.delete')),
@@ -1439,6 +1537,17 @@ window.__ModuleLoader__.load({
             }
           },
         })) : null,
+        extract ? h(ExtractDialog, {
+          key: 'extract',
+          state: extract,
+          onChange: setExtract,
+          onCancel: () => setExtract(null),
+          onDone: (result) => {
+            setExtract(null)
+            notify(tf(t, 'files.extractDone', { count: result.entries, target: result.target }), 'info')
+            void load(currentPath)
+          },
+        }) : null,
         prompt ? h(PromptDialog, {
           title: prompt.title,
           label: prompt.label,

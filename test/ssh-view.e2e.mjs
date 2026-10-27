@@ -13,7 +13,7 @@ import { readFile, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
-import { ServerViewService, ViewError, remotePath } from '../lib/service.js'
+import { ServerViewService, ViewError, remotePath, archiveType, archiveStem, unsafeArchiveEntry } from '../lib/service.js'
 import { apply } from '../index.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -166,6 +166,39 @@ async function main() {
     assert.equal(listing.entries[0].type, 'file')
     await service.removePath(`${REMOTE}/renamed.txt`)
     assert.equal((await service.listDir(REMOTE)).entries.length, 0)
+    await service.removePath(REMOTE, { recursive: true })
+  })
+
+  await test('archive: suffix detection and unsafe entry rejection', async () => {
+    assert.equal(archiveType('bundle.tar.gz'), 'tar.gz')
+    assert.equal(archiveType('bundle.TGZ'), 'tar.gz')
+    assert.equal(archiveType('bundle.zip'), 'zip')
+    assert.equal(archiveType('notes.txt'), '')
+    assert.equal(archiveStem('/home/u/bundle.tar.gz'), 'bundle')
+    assert.equal(unsafeArchiveEntry('../etc/passwd'), true)
+    assert.equal(unsafeArchiveEntry('/etc/passwd'), true)
+    assert.equal(unsafeArchiveEntry('C:/windows'), true)
+    assert.equal(unsafeArchiveEntry('pack/../a.txt'), true)
+    assert.equal(unsafeArchiveEntry('pack/a.txt'), false)
+  })
+
+  await test('fs: extract tar.gz and zip, reject a non-empty target', async () => {
+    await service.dispatch('fs.remove', { path: REMOTE, recursive: true }).catch(() => {})
+    await service.makeDir(REMOTE)
+    await service.makeDir(`${REMOTE}/pack`)
+    await service.writeFile(`${REMOTE}/pack/a.txt`, 'alpha', {})
+    await service.writeFile(`${REMOTE}/pack/b.txt`, 'beta', {})
+    const tar = await service.session.exec(`tar -czf ${REMOTE}/bundle.tar.gz -C ${REMOTE} pack`)
+    assert.equal(tar.code, 0, tar.stderr)
+    const tarOut = await service.extractArchive(`${REMOTE}/bundle.tar.gz`, { target: `${REMOTE}/out-tar` })
+    assert.ok(tarOut.entries >= 2, `tar entries: ${tarOut.entries}`)
+    assert.equal((await service.readFile(`${REMOTE}/out-tar/pack/a.txt`)).content, 'alpha')
+    const zip = await service.session.exec(`cd ${REMOTE} && zip -qr bundle.zip pack`)
+    assert.equal(zip.code, 0, zip.stderr)
+    const zipOut = await service.extractArchive(`${REMOTE}/bundle.zip`, { target: `${REMOTE}/out-zip` })
+    assert.ok(zipOut.entries >= 2, `zip entries: ${zipOut.entries}`)
+    assert.equal((await service.readFile(`${REMOTE}/out-zip/pack/b.txt`)).content, 'beta')
+    await assertCode(service.extractArchive(`${REMOTE}/bundle.zip`, { target: `${REMOTE}/out-zip` }), ['target-exists'])
     await service.removePath(REMOTE, { recursive: true })
   })
 

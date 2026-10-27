@@ -18,6 +18,7 @@
 | 连接 | 主机 / 端口 / 用户名；**密码或 SSH 密钥（ssh-agent / ~/.ssh）登录**；多套配置；主机指纹 TOFU 校验 |
 | 自动连接 | 使用 SSH 密钥登录时，把非机密配置保存到本机；DSH 启动后自动连接最近一次配置 |
 | 文件 | 目录浏览、面包屑与路径跳转、新建文件 / 文件夹、重命名、移动、递归删除、上传、下载 |
+| 解压 | zip / tar / tar.gz / tgz / tar.bz2 / tar.xz / gz / bz2 / xz；默认解压到同名目录，校验路径穿越与链接条目 |
 | 编辑 | 内置文本编辑器，`Ctrl/Cmd+S` 保存；按内容哈希检测并发修改，冲突时提示重新加载或强制覆盖；二进制与超大文件改为提示下载 |
 | 进程 | `ps` 列表（PID、用户、CPU%、内存%、RSS、运行时长、状态、命令行），排序、过滤、定时刷新；SIGTERM / SIGKILL，二次确认，拒绝 PID 1 |
 | 日志 | 任意日志文件 tail 末尾 N 行，可定时跟随；自动探测常见日志路径 |
@@ -89,7 +90,7 @@ dsh plugin --profile web add dsh-ssh-view
    - **密码**：需要先创建 / 解锁主密码凭据库，才能加密保存密码。
 3. 勾选「保存此连接」；使用 SSH 密钥时同时勾选「DSH 启动后自动连接」。
 4. 连接成功后：
-   - **文件**：双击目录进入，双击文本文件打开编辑器；工具栏可上传、下载、重命名、移动、删除。
+   - **文件**：双击目录进入，双击文本文件打开编辑器；工具栏可上传、下载、解压、重命名、移动、删除。选中归档后点「解压」，确认目标目录即可。
    - **进程**：搜索框过滤，点击列头排序；行尾停止按钮选择 SIGTERM / SIGKILL 并确认。
    - **日志**：输入绝对路径或点「常用日志」，勾选「跟随刷新」每 2.5 秒重读末尾 N 行。
 
@@ -161,6 +162,7 @@ dsh plugin --profile web add dsh-ssh-view
 - 主机指纹采用 TOFU：首次连接记录 SHA256 指纹，之后不一致即中止，需在界面显式信任。
 - 远端路径必须是绝对路径，统一 POSIX 归一化；删除 / 重命名禁止系统根目录与用户主目录。
 - 远端命令只拼接校验过的整数（PID、行数）与 POSIX 单引号转义的路径。
+- 解压前先列出归档条目并校验：拒绝 `../`、绝对路径、盘符，以及 tar / zip 中的符号链接、硬链接与设备条目；目标目录不能是系统根目录；默认解压到归档同名的新目录。
 - 不做 sudo / 提权：SSH 用户能做什么，这个视图就能做什么。建议使用最小权限账号。
 
 ### 使用建议
@@ -191,6 +193,9 @@ dsh plugin --profile web add dsh-ssh-view
 | 「未找到可用的 ssh-agent 或 ~/.ssh 私钥」 | 运行 `ssh-add ~/.ssh/id_ed25519`，或改用密码登录。 |
 | 启动后没有自动连接 | 界面会显示自动连接失败原因，点「重试」；确认勾选了「DSH 启动后自动连接」，且该配置是 SSH 密钥方式。 |
 | 进程页读取失败 | 远端缺少 `procps`；安装后重试。 |
+| 解压提示「服务器未安装 unzip/tar/…」 | 按提示安装对应工具（`apt install unzip` / `apk add unzip`）。 |
+| 解压提示「目标目录非空」 | 勾选「覆盖目标目录中的同名文件」，或换一个目标路径。 |
+| 解压提示「归档包含不安全的路径 / 符号链接」 | 归档含 `../`、绝对路径或链接条目，插件会拒绝解压；请先检查归档来源。 |
 | 刷新页面后没有图标 | 首次安装客户端插件需要刷新；确认 `web` profile 的 `package.json` 中 bundles 含 `dsh-ssh-view`。 |
 | 修改 Host 代码后行为未变 | Host 模块在进程内缓存，改动后需重启 DSH。 |
 
@@ -203,7 +208,7 @@ npm install
 
 # 1) 启动一台本地测试 SSH 服务器（Docker）
 docker run -d --name dsh-ssh-test -p 127.0.0.1:2222:2222 alpine:3.20 sh -c "
-  apk add --no-cache openssh procps &&
+  apk add --no-cache openssh procps zip unzip &&
   ssh-keygen -A &&
   echo 'root:test-password-123' | chpasswd &&
   printf 'PasswordAuthentication yes\nPermitRootLogin yes\n' >> /etc/ssh/sshd_config &&
@@ -214,7 +219,7 @@ docker exec dsh-ssh-test sh -c 'mkdir -p /root/.ssh && chmod 700 /root/.ssh'
 docker cp ~/.ssh/id_ed25519.pub dsh-ssh-test:/root/.ssh/authorized_keys
 docker exec dsh-ssh-test chmod 600 /root/.ssh/authorized_keys
 
-# 3) 端到端：凭据库、指纹、SFTP、上传下载、进程、日志、路径防护、RPC 路由
+# 3) 端到端：凭据库、指纹、SFTP、上传下载、解压、进程、日志、路径防护、RPC 路由
 node test/ssh-view.e2e.mjs
 E2E_AGENT=1 node test/ssh-view.e2e.mjs   # 追加密钥登录与启动自动连接
 
@@ -249,6 +254,7 @@ node test/ssh-view.client-module.mjs
 - 不支持跳板机、sudo 提权、systemd / Docker 服务管理。
 - 日志跟随是客户端定时重读末尾 N 行（2.5s），不是服务端流式推送。
 - 单文件编辑上限 2 MB；更大的文件请下载后处理。
+- 解压依赖远端 `tar` / `unzip` / `gzip` / `bzip2` / `xz`；不支持 7z、rar。解压超时 5 分钟，超大归档可能被中断。
 - 进程结束仅支持 SIGTERM / SIGKILL；受 SSH 用户权限限制。
 - 未提供 AI agent 工具，所有操作只通过界面由人触发。
 
